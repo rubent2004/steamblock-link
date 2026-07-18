@@ -59,3 +59,16 @@ Filename: "{app}\{#AppExe}"; Description: "Iniciar STEAMBLOCK Link ahora"; \
 [UninstallRun]
 ; Cerrar el proceso antes de borrar los archivos.
 Filename: "{sys}\taskkill.exe"; Parameters: "/IM {#AppExe} /F"; Flags: runhidden; RunOnceId: "KillLink"
+
+[Code]
+// En una actualización, cierra el Link que esté corriendo en la bandeja antes de
+// sobrescribir el .exe (si no, Windows lo bloquea). Se ejecuta justo antes de
+// copiar archivos. Mismo AppId => Inno lo trata como upgrade en la misma carpeta.
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  ResultCode: Integer;
+begin
+  if CurStep = ssInstall then
+    Exec(ExpandConstant('{sys}\taskkill.exe'), '/IM {#AppExe} /F', '',
+      SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
