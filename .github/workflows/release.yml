@@ -13,14 +13,16 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-22.04
             target: node22-linux-x64
             suffix: linux-x64
-            artifact: steamblock-link-linux-x64
-          - os: ubuntu-latest
+            artifact_name: steamblock-link-linux-x64
+            archive_ext: tar.gz
+          - os: windows-latest
             target: node22-win-x64
             suffix: win-x64
-            artifact: steamblock-link-win-x64.exe
+            artifact_name: steamblock-link-win-x64
+            archive_ext: zip
 
     runs-on: ${{ matrix.os }}
 
@@ -37,31 +39,91 @@ jobs:
       - name: Build TypeScript
         run: npm run build
 
-      - name: Download arduino-cli
+      # ── Descargar arduino-cli ──────────────────────────────
+      - name: Download arduino-cli (Linux)
+        if: runner.os == 'Linux'
         run: |
           mkdir -p resources/arduino-cli
-          if [ "${{ matrix.suffix }}" = "win-x64" ]; then
-            curl -sL https://downloads.arduino.cc/arduino-cli/arduino-cli_latest_Windows_64bit.zip -o /tmp/cli.zip
-            unzip -o /tmp/cli.zip -d resources/arduino-cli/
+          curl -sL https://downloads.arduino.cc/arduino-cli/arduino-cli_latest_Linux_64bit.tar.gz \
+            | tar xzf - -C resources/arduino-cli/
+
+      - name: Download arduino-cli (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path resources\arduino-cli | Out-Null
+          $tmp = "$env:TEMP\cli.zip"
+          Invoke-WebRequest -Uri "https://downloads.arduino.cc/arduino-cli/arduino-cli_latest_Windows_64bit.zip" -OutFile $tmp
+          Expand-Archive -Path $tmp -DestinationPath resources\arduino-cli\ -Force
+
+      - name: Create vendored libraries dir
+        shell: bash
+        run: mkdir -p resources/arduino-libs
+
+      # ── Empaquetar con pkg ─────────────────────────────────
+      - name: Bundle with pkg
+        shell: bash
+        run: npx @yao-pkg/pkg dist/index.js --target ${{ matrix.target }} --output dist/${{ matrix.artifact_name }}/${{ matrix.artifact_name }}
+
+      # ── Copiar prebuilds nativos junto al binario ──────────
+      # pkg no puede dlopen() addons .node desde su snapshot virtual.
+      # node-gyp-build los busca relativo al módulo, así que recreamos
+      # la estructura node_modules/ junto al ejecutable.
+      - name: Copy native prebuilds alongside binary
+        shell: bash
+        run: |
+          DEST="dist/${{ matrix.artifact_name }}/node_modules/@serialport/bindings-cpp/prebuilds"
+          mkdir -p "$DEST"
+          SRC="node_modules/@serialport/bindings-cpp/prebuilds"
+          if [ -d "$SRC" ]; then
+            cp -r "$SRC"/* "$DEST"/
+            echo "✅ Prebuilds copiados:"
+            find "$DEST" -type f -name '*.node'
           else
-            curl -sL https://downloads.arduino.cc/arduino-cli/arduino-cli_latest_Linux_64bit.tar.gz -o /tmp/cli.tar.gz
-            tar xzf /tmp/cli.tar.gz -C resources/arduino-cli/
+            echo "❌ No se encontraron prebuilds"
+            exit 1
           fi
 
-      - name: Download vendored libraries
+      # ── Copiar arduino-cli junto al binario ────────────────
+      - name: Copy arduino-cli alongside binary
+        shell: bash
         run: |
-          mkdir -p resources/arduino-libs
-          # SimpleList no está en el índice oficial, se vendorea.
-          # Por ahora creamos el directorio vacío; el Link lo crea si falta.
+          cp -r resources/arduino-cli dist/${{ matrix.artifact_name }}/
+          cp -r resources/arduino-libs dist/${{ matrix.artifact_name }}/
 
-      - name: Bundle with pkg
-        run: npx @yao-pkg/pkg dist/index.js --target ${{ matrix.target }} --output dist/${{ matrix.artifact }}
+      # ── Crear launcher (Windows) ───────────────────────────
+      - name: Create Windows launcher
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          cat > "dist/${{ matrix.artifact_name }}/EJECUTAR.bat" << 'EOF'
+          @echo off
+          title STEAMBLOCK Link
+          cd /d "%~dp0"
+          "%~dp0steamblock-link-win-x64.exe"
+          pause
+          EOF
+
+      # ── Comprimir distribución ─────────────────────────────
+      - name: Archive (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          cd dist
+          tar czf "${{ matrix.artifact_name }}.tar.gz" "${{ matrix.artifact_name }}/"
+          ls -lh "${{ matrix.artifact_name }}.tar.gz"
+
+      - name: Archive (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "dist\${{ matrix.artifact_name }}\*" -DestinationPath "dist\${{ matrix.artifact_name }}.zip"
+          Get-ChildItem "dist\${{ matrix.artifact_name }}.zip"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
-          path: dist/${{ matrix.artifact }}
+          name: ${{ matrix.artifact_name }}
+          path: dist/${{ matrix.artifact_name }}.${{ matrix.archive_ext }}
 
   release:
     needs: build
@@ -76,5 +138,17 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/*
+          files: |
+            artifacts/*.tar.gz
+            artifacts/*.zip
           generate_release_notes: true
+          body: |
+            ## Instalación
+
+            1. Descarga el archivo para tu plataforma
+            2. Descomprime la carpeta
+            3. **Linux**: `chmod +x steamblock-link-linux-x64 && ./steamblock-link-linux-x64`
+            4. **Windows**: doble click en `EJECUTAR.bat`
+            5. Abre [STEAMBLOCK Studio](https://steamblock.steamroboticsacademy.com) en el navegador
+
+            El Link se conectará automáticamente al IDE web.

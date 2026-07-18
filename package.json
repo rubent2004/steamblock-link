@@ -35,5 +35,9 @@
       "node22-win-x64"
     ],
     "outputPath": "dist"
+  },
+  "allowScripts": {
+    "@serialport/bindings-cpp@13.0.0": true,
+    "esbuild@0.28.1": true
   }
 }
