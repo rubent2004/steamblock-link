@@ -44,9 +44,15 @@ export interface LinkServerOptions {
 
 const DEFAULT_PORT = 20111
 
+/** Orígenes siempre permitidos (producción + desarrollo). */
+const BUILTIN_ORIGINS: readonly string[] = [
+  'https://steamblock.steamroboticsacademy.com'
+]
+
 function isAllowedOrigin(origin: string | undefined, extra: string[]): boolean {
   if (!origin || origin === 'file://') return true
   if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return true
+  if (BUILTIN_ORIGINS.includes(origin)) return true
   return extra.includes(origin)
 }
 
