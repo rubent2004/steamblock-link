@@ -65,31 +65,30 @@ jobs:
         shell: bash
         run: npx @yao-pkg/pkg dist/index.js --target ${{ matrix.target }} --output dist/${{ matrix.artifact_name }}/${{ matrix.artifact_name }}
 
-      # ── Copiar prebuilds nativos junto al binario ──────────
-      # pkg no puede dlopen() addons .node desde su snapshot virtual.
-      # node-gyp-build los busca relativo al módulo, así que recreamos
-      # la estructura node_modules/ junto al ejecutable.
-      - name: Copy native prebuilds alongside binary
+      # ── Copiar prebuilds nativos de serialport a la raíz ──
+      # node-gyp-build busca la carpeta 'prebuilds' al lado de process.execPath.
+      - name: Copy native prebuilds to root
         shell: bash
         run: |
-          DEST="dist/${{ matrix.artifact_name }}/node_modules/@serialport/bindings-cpp/prebuilds"
+          DEST="dist/${{ matrix.artifact_name }}/prebuilds"
           mkdir -p "$DEST"
           SRC="node_modules/@serialport/bindings-cpp/prebuilds"
           if [ -d "$SRC" ]; then
             cp -r "$SRC"/* "$DEST"/
-            echo "✅ Prebuilds copiados:"
+            echo "✅ Prebuilds copiados a la raíz:"
             find "$DEST" -type f -name '*.node'
           else
             echo "❌ No se encontraron prebuilds"
             exit 1
           fi
 
-      # ── Copiar arduino-cli junto al binario ────────────────
-      - name: Copy arduino-cli alongside binary
+      # ── Copiar resources (que contiene arduino-cli y arduino-libs) ──
+      - name: Copy resources to output
         shell: bash
         run: |
-          cp -r resources/arduino-cli dist/${{ matrix.artifact_name }}/
-          cp -r resources/arduino-libs dist/${{ matrix.artifact_name }}/
+          cp -r resources dist/${{ matrix.artifact_name }}/
+          echo "✅ Resources copiados:"
+          ls -l dist/${{ matrix.artifact_name }}/resources
 
       # ── Crear launcher (Windows) ───────────────────────────
       - name: Create Windows launcher
@@ -147,8 +146,8 @@ jobs:
 
             1. Descarga el archivo para tu plataforma
             2. Descomprime la carpeta
-            3. **Linux**: `chmod +x steamblock-link-linux-x64 && ./steamblock-link-linux-x64`
-            4. **Windows**: doble click en `EJECUTAR.bat`
+            3. **Linux**: Abre la carpeta en la terminal y ejecuta `chmod +x steamblock-link-linux-x64 && ./steamblock-link-linux-x64`
+            4. **Windows**: Entra a la carpeta descomprimida y haz doble click en `EJECUTAR.bat`
             5. Abre [STEAMBLOCK Studio](https://steamblock.steamroboticsacademy.com) en el navegador
 
             El Link se conectará automáticamente al IDE web.
