@@ -1,153 +1,61 @@
 name: Build & Release
 
+# Compila el instalador de Windows en un runner nativo (Go puro + Inno Setup) y
+# lo adjunta al Release. Se dispara al empujar un tag vX.Y.Z, o a mano.
 on:
   push:
-    tags:
-      - "v*"
+    tags: ["v*"]
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  build:
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-22.04
-            target: node22-linux-x64
-            suffix: linux-x64
-            artifact_name: steamblock-link-linux-x64
-            archive_ext: tar.gz
-          - os: windows-latest
-            target: node22-win-x64
-            suffix: win-x64
-            artifact_name: steamblock-link-win-x64
-            archive_ext: zip
-
-    runs-on: ${{ matrix.os }}
-
+  windows-installer:
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-go@v5
         with:
-          node-version: 22
+          go-version: "1.23"
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Tests
+        run: go test ./...
 
-      - name: Build TypeScript
-        run: npm run build
-
-      # ── Descargar arduino-cli ──────────────────────────────
-      - name: Download arduino-cli (Linux)
-        if: runner.os == 'Linux'
+      - name: Build exe (sin consola)
+        shell: bash
         run: |
-          mkdir -p resources/arduino-cli
-          curl -sL https://downloads.arduino.cc/arduino-cli/arduino-cli_latest_Linux_64bit.tar.gz \
-            | tar xzf - -C resources/arduino-cli/
+          mkdir -p dist/staging/resources/arduino-cli dist/staging/resources/arduino-libs
+          go build -ldflags="-H=windowsgui -s -w" -o dist/staging/steamblock-link.exe ./cmd/steamblock-link
 
-      - name: Download arduino-cli (Windows)
-        if: runner.os == 'Windows'
+      - name: Empaquetar arduino-cli
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path resources\arduino-cli | Out-Null
-          $tmp = "$env:TEMP\cli.zip"
-          Invoke-WebRequest -Uri "https://downloads.arduino.cc/arduino-cli/arduino-cli_latest_Windows_64bit.zip" -OutFile $tmp
-          Expand-Archive -Path $tmp -DestinationPath resources\arduino-cli\ -Force
+          $tmp = "$env:TEMP\arduino-cli.zip"
+          Invoke-WebRequest "https://downloads.arduino.cc/arduino-cli/arduino-cli_latest_Windows_64bit.zip" -OutFile $tmp
+          Expand-Archive $tmp -DestinationPath dist\staging\resources\arduino-cli -Force
 
-      - name: Create vendored libraries dir
-        shell: bash
-        run: mkdir -p resources/arduino-libs
+      - name: Instalar Inno Setup
+        run: choco install innosetup -y --no-progress
 
-      # ── Empaquetar con pkg ─────────────────────────────────
-      - name: Bundle with pkg
-        shell: bash
-        run: npx @yao-pkg/pkg dist/index.js --target ${{ matrix.target }} --output dist/${{ matrix.artifact_name }}/${{ matrix.artifact_name }}
-
-      # ── Copiar prebuilds nativos de serialport a la raíz ──
-      # node-gyp-build busca la carpeta 'prebuilds' al lado de process.execPath.
-      - name: Copy native prebuilds to root
-        shell: bash
-        run: |
-          DEST="dist/${{ matrix.artifact_name }}/prebuilds"
-          mkdir -p "$DEST"
-          SRC="node_modules/@serialport/bindings-cpp/prebuilds"
-          if [ -d "$SRC" ]; then
-            cp -r "$SRC"/* "$DEST"/
-            echo "✅ Prebuilds copiados a la raíz:"
-            find "$DEST" -type f -name '*.node'
-          else
-            echo "❌ No se encontraron prebuilds"
-            exit 1
-          fi
-
-      # ── Copiar resources (que contiene arduino-cli y arduino-libs) ──
-      - name: Copy resources to output
-        shell: bash
-        run: |
-          cp -r resources dist/${{ matrix.artifact_name }}/
-          echo "✅ Resources copiados:"
-          ls -l dist/${{ matrix.artifact_name }}/resources
-
-      # ── Crear launcher (Windows) ───────────────────────────
-      - name: Create Windows launcher
-        if: runner.os == 'Windows'
-        shell: bash
-        run: |
-          cat > "dist/${{ matrix.artifact_name }}/EJECUTAR.bat" << 'EOF'
-          @echo off
-          title STEAMBLOCK Link
-          cd /d "%~dp0"
-          "%~dp0steamblock-link-win-x64.exe"
-          pause
-          EOF
-
-      # ── Comprimir distribución ─────────────────────────────
-      - name: Archive (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          cd dist
-          tar czf "${{ matrix.artifact_name }}.tar.gz" "${{ matrix.artifact_name }}/"
-          ls -lh "${{ matrix.artifact_name }}.tar.gz"
-
-      - name: Archive (Windows)
-        if: runner.os == 'Windows'
+      - name: Compilar instalador
         shell: pwsh
         run: |
-          Compress-Archive -Path "dist\${{ matrix.artifact_name }}\*" -DestinationPath "dist\${{ matrix.artifact_name }}.zip"
-          Get-ChildItem "dist\${{ matrix.artifact_name }}.zip"
+          $v = "${{ github.ref_name }}" -replace '^v',''
+          if (-not $v) { $v = "0.0.0" }
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=$v installer\steamblock-link.iss
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact_name }}
-          path: dist/${{ matrix.artifact_name }}.${{ matrix.archive_ext }}
-
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-          merge-multiple: true
-
-      - name: Create release
+      - name: Adjuntar al Release
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            artifacts/*.tar.gz
-            artifacts/*.zip
+          files: dist/STEAMBLOCK-Link-Setup-*.exe
           generate_release_notes: true
-          body: |
-            ## Instalación
 
-            1. Descarga el archivo para tu plataforma
-            2. Descomprime la carpeta
-            3. **Linux**: Abre la carpeta en la terminal y ejecuta `chmod +x steamblock-link-linux-x64 && ./steamblock-link-linux-x64`
-            4. **Windows**: Entra a la carpeta descomprimida y haz doble click en `EJECUTAR.bat`
-            5. Abre [STEAMBLOCK Studio](https://steamblock.steamroboticsacademy.com) en el navegador
-
-            El Link se conectará automáticamente al IDE web.
+      - name: Subir artefacto (ejecución manual)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: STEAMBLOCK-Link-Setup
+          path: dist/STEAMBLOCK-Link-Setup-*.exe

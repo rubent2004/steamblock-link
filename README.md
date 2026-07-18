@@ -22,46 +22,30 @@ El navegador **no puede** ejecutar `arduino-cli` ni acceder al puerto serie dire
 └──────────────────────┘                                └─────────────────────────┘
 ```
 
+> **Implementado en Go** (binario estático único). Antes fue TypeScript/Node
+> empaquetado con `pkg`; se migró a Go para bajar el tamaño del instalador (~10 MB
+> vs ~50 MB de runtime), correr **sin ventana de consola** y poner un **icono en la
+> bandeja** como mBlock/OpenBlock. El contrato JSON-RPC es idéntico.
+
 ## Instalación
 
-### Descargar binario pre-compilado
+### Windows (instalador clásico)
 
-Ve a [Releases](../../releases) y descarga el binario para tu plataforma:
+Descarga `STEAMBLOCK-Link-Setup-x.y.z.exe` de [Releases](../../releases) y sigue
+el wizard (siguiente-siguiente). Al terminar, el Link queda como **icono en la
+bandeja** (junto al reloj) y, si marcaste la casilla, **arranca solo con Windows**.
+No hay que abrir ninguna consola.
 
-| Plataforma | Archivo |
-|-----------|---------|
-| Linux x64 | `steamblock-link-linux-x64` |
-| Windows x64 | `steamblock-link-win-x64.exe` |
+### Linux
 
-### Desde npm (desarrollo)
-
-```bash
-npm install -g steamblock-link
-```
+Descarga el binario `steamblock-link` y ejecútalo: aparece en la bandeja del
+escritorio. (Requiere un panel con soporte de AppIndicator/StatusNotifier.)
 
 ## Uso
 
-### Arrancar el Link
-
-```bash
-# Linux
-./steamblock-link-linux-x64
-
-# Windows
-steamblock-link-win-x64.exe
-```
-
-Verás:
-
-```
-  ╔══════════════════════════════════════════╗
-  ║       STEAMBLOCK Studio Link v0.1.0      ║
-  ║   Companion local para el IDE web         ║
-  ╚══════════════════════════════════════════╝
-
-[steamblock-link] Escuchando en ws://127.0.0.1:20111
-[steamblock-link] Esperando conexión del IDE web...
-```
+Una vez instalado, el Link corre en segundo plano en la **bandeja del sistema**.
+El menú del icono muestra la dirección (`ws://127.0.0.1:20111`), el estado del
+entorno Arduino y la opción **Salir**.
 
 ### Abrir el IDE web
 
@@ -113,50 +97,62 @@ El Link usa **JSON-RPC 2.0 sobre WebSocket**. Los canales derivan del contrato `
 
 ## Desarrollo
 
-```bash
-# Instalar dependencias
-npm install
-
-# Modo desarrollo (con tsx)
-npm run dev
-
-# Compilar TypeScript
-npm run build
-
-# Ejecutar
-npm start
-```
-
-## Construir binarios
+Requiere **Go 1.23+**. Para la bandeja en Linux/macOS hace falta cgo (gcc y
+DBus/Cocoa del sistema); en Windows es Go puro.
 
 ```bash
-# Compilar + empaquetar con pkg
-npm run dist
+# Tests de integración (WebSocket + JSON-RPC + simulador, sin hardware)
+make test
+
+# Binario nativo para probar la bandeja en esta máquina
+make linux
+STUDIO_SIM_SERIAL=1 ./dist/steamblock-link   # con placa virtual
 ```
 
-Los binarios se generan en `dist/`:
+## Construir el instalador de Windows
 
-- `steamblock-link-linux-x64` (~40 MB)
-- `steamblock-link-win-x64.exe` (~40 MB)
+Desde Linux/CachyOS, **sin mingw ni wine** (en Windows `systray` usa syscalls
+Win32 puros, así que el cross-build es Go puro):
+
+```bash
+# 1) exe (7 MB, GUI sin consola) + arduino-cli.exe + librerías → dist/staging
+make stage
+
+# 2) wizard Inno Setup → dist/STEAMBLOCK-Link-Setup-x.y.z.exe
+make installer            # necesita iscc (Inno Setup nativo, o `wine iscc.exe`)
+```
+
+`make windows` a solas hace el cross-build:
+
+```bash
+CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
+  go build -ldflags="-H=windowsgui -s -w" -o steamblock-link.exe ./cmd/steamblock-link
+```
+
+El instalador final pesa ~20-25 MB (arduino-cli comprime bien con lzma2).
 
 ## Arquitectura
 
 ```
-src/
-├── index.ts              # Entry point (CLI, detección de arduino-cli)
-├── server.ts             # Servidor WebSocket + JSON-RPC router
-├── core.ts               # Barrel de servicios nativos
-├── serial.service.ts     # Comunicación serie (serialport)
-├── serial.sim.ts         # Dispositivo virtual (simulación)
-├── compiler.service.ts   # Compilación con arduino-cli
-├── libraries.ts          # Instalación de cores y librerías
-├── arduino-env.ts        # Ruta del ejecutable arduino-cli
-└── shared/
-    ├── ipc.ts            # Contrato IPC (fuente de verdad)
-    ├── jsonrpc.ts        # Tipos JSON-RPC 2.0
-    └── types/
-        └── board.ts      # Schema de placas (valibot)
+cmd/steamblock-link/
+├── main.go             # entrypoint: bandeja (systray) + arranque del servidor
+├── icon_windows.go     # icono ICO (bandeja Windows)
+└── icon_other.go       # icono PNG (bandeja Linux/macOS)
+internal/link/
+├── server.go           # servidor WebSocket + origen/token (loopback only)
+├── dispatch.go         # router JSON-RPC (canales del contrato)
+├── protocol.go         # tipos JSON-RPC 2.0 + dominio (Board, puertos, resultado)
+├── serial.go           # comunicación serie (go.bug.st/serial), dueño único
+├── sim.go              # dispositivo virtual (STUDIO_SIM_SERIAL)
+├── compiler.go         # compilar/subir y preparar cores/librerías (arduino-cli)
+└── server_test.go      # tests de integración end-to-end
+installer/
+└── steamblock-link.iss # script del wizard (Inno Setup)
+Makefile                # test · linux · windows · stage · installer
 ```
+
+> El código TypeScript original queda en `src/` como referencia durante la
+> transición; una vez validado el binario Go se puede retirar junto a `node_modules/`.
 
 ## Licencia
 
