@@ -28,7 +28,8 @@
   },
   "pkg": {
     "assets": [
-      "resources/**/*"
+      "resources/**/*",
+      "node_modules/@serialport/bindings-cpp/prebuilds/**/*"
     ],
     "targets": [
       "node22-linux-x64",
