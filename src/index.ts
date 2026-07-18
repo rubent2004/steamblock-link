@@ -12,7 +12,8 @@
  */
 
 import { createLinkServer } from './server.js'
-import { prepareArduino, setArduinoCli } from './arduino-env.js'
+import { setArduinoCli } from './arduino-env.js'
+import { prepareArduino } from './libraries.js'
 import { existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -75,7 +76,7 @@ function main(): void {
     console.log('')
 
     // Preparar Arduino en segundo plano (core + librerías).
-    prepareArduino().then((r) => {
+    prepareArduino().then((r: { ok: boolean; message: string }) => {
       console.log(`[steamblock-link] ${r.message}`)
     })
   })
