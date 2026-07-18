@@ -11,7 +11,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
-    "pkg": "pkg dist/index.js --target node20-linux-x64,node20-win-x64 --output dist/steamblock-link",
+    "pkg": "pkg dist/index.js --target node22-linux-x64,node22-win-x64 --output dist/steamblock-link",
     "dist": "npm run build && npm run pkg"
   },
   "dependencies": {
@@ -22,7 +22,7 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/ws": "^8.18.1",
-    "pkg": "^5.8.1",
+    "@yao-pkg/pkg": "^6.0.0",
     "tsx": "^4.23.1",
     "typescript": "^5.9.3"
   },
@@ -31,8 +31,8 @@
       "resources/**/*"
     ],
     "targets": [
-      "node20-linux-x64",
-      "node20-win-x64"
+      "node22-linux-x64",
+      "node22-win-x64"
     ],
     "outputPath": "dist"
   }

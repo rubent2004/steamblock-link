@@ -14,11 +14,11 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            target: node20-linux-x64
+            target: node22-linux-x64
             suffix: linux-x64
             artifact: steamblock-link-linux-x64
           - os: ubuntu-latest
-            target: node20-win-x64
+            target: node22-win-x64
             suffix: win-x64
             artifact: steamblock-link-win-x64.exe
 
@@ -55,7 +55,7 @@ jobs:
           # Por ahora creamos el directorio vacío; el Link lo crea si falta.
 
       - name: Bundle with pkg
-        run: npx pkg dist/index.js --target ${{ matrix.target }} --output dist/${{ matrix.artifact }}
+        run: npx @yao-pkg/pkg dist/index.js --target ${{ matrix.target }} --output dist/${{ matrix.artifact }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
