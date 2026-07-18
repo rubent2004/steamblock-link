@@ -1,7 +1,9 @@
 name: Build & Release
 
-# Compila el instalador de Windows en un runner nativo (Go puro + Inno Setup) y
-# lo adjunta al Release. Se dispara al empujar un tag vX.Y.Z, o a mano.
+# Compila los instaladores nativos y los adjunta al Release:
+#   - Windows: runner windows-latest, Go puro + Inno Setup → .exe
+#   - Linux:   runner ubuntu-latest, Go+cgo (bandeja GTK) → .deb y .tar.gz
+# Se dispara al empujar un tag vX.Y.Z, o a mano.
 on:
   push:
     tags: ["v*"]
@@ -59,3 +61,60 @@ jobs:
         with:
           name: STEAMBLOCK-Link-Setup
           path: dist/STEAMBLOCK-Link-Setup-*.exe
+
+  linux-packages:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+
+      # La bandeja (fyne.io/systray) necesita cgo + GTK3 + appindicator en Linux,
+      # así que se compila en runner nativo (no es cross-build como Windows).
+      - name: Instalar libs de bandeja
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc libgtk-3-dev libayatana-appindicator3-dev
+
+      - name: Tests
+        run: go test ./...
+
+      - name: Build binario Linux (cgo)
+        run: |
+          mkdir -p dist/staging-linux/resources/arduino-cli dist/staging-linux/resources/arduino-libs
+          CGO_ENABLED=1 go build -ldflags="-s -w" -o dist/staging-linux/steamblock-link ./cmd/steamblock-link
+
+      - name: Empaquetar arduino-cli
+        run: |
+          curl -fSL https://downloads.arduino.cc/arduino-cli/arduino-cli_latest_Linux_64bit.tar.gz -o /tmp/arduino-cli.tar.gz
+          tar -xzf /tmp/arduino-cli.tar.gz -C dist/staging-linux/resources/arduino-cli arduino-cli
+
+      - name: Empaquetar .tar.gz (universal, funciona en Arch)
+        run: tar -czf dist/STEAMBLOCK-Link-linux-x86_64.tar.gz -C dist/staging-linux .
+
+      - name: Construir .deb (nfpm)
+        run: |
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+          export VERSION="${GITHUB_REF_NAME#v}"
+          [ -n "$VERSION" ] || VERSION=0.0.0
+          "$(go env GOPATH)/bin/nfpm" pkg --packager deb --config installer/nfpm.yaml --target dist/
+
+      - name: Adjuntar al Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/STEAMBLOCK-Link-linux-x86_64.tar.gz
+            dist/*.deb
+          generate_release_notes: true
+
+      - name: Subir artefactos (ejecución manual)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: STEAMBLOCK-Link-linux
+          path: |
+            dist/STEAMBLOCK-Link-linux-x86_64.tar.gz
+            dist/*.deb

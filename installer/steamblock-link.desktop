@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=STEAMBLOCK Link
+Comment=Companion local de STEAMBLOCK Studio para compilar y subir a placas Arduino
+Exec=/opt/steamblock-link/steamblock-link
+Icon=steamblock-link
+Terminal=false
+Categories=Development;Education;
+StartupNotify=false
+X-GNOME-Autostart-enabled=true

@@ -1,0 +1,42 @@
+# Empaquetado .deb de STEAMBLOCK Link (equivalente Linux del wizard Inno Setup).
+# Se construye con nfpm: `nfpm pkg --packager deb --config installer/nfpm.yaml`.
+# La versión sale de $VERSION (el job de release la deriva del tag vX.Y.Z).
+#
+# Layout instalado (igual que el staging de Windows: binario + resources juntos,
+# porque el exe resuelve arduino-cli/librerías por su propia ruta en disco):
+#   /opt/steamblock-link/steamblock-link
+#   /opt/steamblock-link/resources/{arduino-cli,arduino-libs}
+name: steamblock-link
+arch: amd64
+platform: linux
+version: ${VERSION}
+maintainer: STEAM Robotics Academy <sararoboticssoftware@gmail.com>
+description: |
+  Companion local de STEAMBLOCK Studio: corre en la bandeja del sistema un
+  servidor WebSocket que el IDE web usa para compilar y subir a placas Arduino.
+homepage: https://github.com/rubent2004/steamblock-link
+license: Proprietary
+section: education
+priority: optional
+
+# La bandeja usa GTK3 + appindicator (cgo); apt los arrastra al instalar.
+depends:
+  - libgtk-3-0
+  - libayatana-appindicator3-1
+
+contents:
+  - src: dist/staging-linux/steamblock-link
+    dst: /opt/steamblock-link/steamblock-link
+
+  - src: dist/staging-linux/resources
+    dst: /opt/steamblock-link/resources
+
+  - src: installer/steamblock-link.desktop
+    dst: /usr/share/applications/steamblock-link.desktop
+
+  # Autoarranque en la sesión de escritorio (paralelo al autostart HKLM de Windows).
+  - src: installer/steamblock-link.desktop
+    dst: /etc/xdg/autostart/steamblock-link.desktop
+
+  - src: cmd/steamblock-link/icon.png
+    dst: /usr/share/icons/hicolor/256x256/apps/steamblock-link.png
