@@ -98,6 +98,7 @@ func (c *Compiler) run(ctx context.Context, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, c.cliPath, args...)
+	hideConsole(cmd) // Windows: sin ventana de consola parpadeante (no-op en otros SO).
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
